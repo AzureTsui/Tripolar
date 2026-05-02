@@ -1,0 +1,34 @@
+# Tripolar RSS 源列表
+# 格式：每行一个 RSS 源 URL
+
+## AI 资讯媒体（中文）
+https://www.jiqizhixin.com/rss
+https://www.qbitai.com/feed
+https://www.tmtpost.com/rss
+
+## 头部模型厂商（英文）
+https://openai.com/news/rss.xml
+https://deepmind.google/blog/rss.xml
+https://blog.google/technology/ai/rss/
+https://research.google/blog/rss/
+https://huggingface.co/blog/feed.xml
+
+## Agent 平台 / 工作流编排
+https://www.coze.com/blog/rss
+https://blog.langchain.dev/rss.xml
+https://blog.llamaindex.ai/feed
+https://docs.dify.ai/blog/rss.xml
+
+## RAG / 向量数据库 / 知识库技术
+https://weaviate.io/blog/rss.xml
+https://qdrant.tech/blog/rss.xml
+https://www.pinecone.io/blog/rss.xml
+https://milvus.io/blog/rss.xml
+
+## AI 产品 & 行业分析（英文）
+https://a16z.com/feed/
+https://aws.amazon.com/blogs/machine-learning/feed/
+https://news.ycombinator.com/rss
+
+## 技术社区
+https://feed.infoq.com/
