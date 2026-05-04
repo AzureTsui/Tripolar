@@ -24,10 +24,10 @@ def fetch_source(source: Source, db) -> int:
         article = Article(
             title=entry.get("title", "Untitled"),
             url=url,
-            source_id=source.id,
-            content_text=entry.get("summary", "") or entry.get("description", ""),
-            published_at=published,
-            status="new",
+            source=source.name,
+            date=published,
+            tags="",
+            summary=entry.get("summary", "") or entry.get("description", ""),
         )
         db.add(article)
         new_count += 1
@@ -46,5 +46,6 @@ def fetch_all_sources(db) -> dict:
             count = fetch_source(source, db)
             results[source.name] = count
         except Exception as e:
+            db.rollback()
             results[source.name] = f"error: {e}"
     return results

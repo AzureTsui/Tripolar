@@ -36,16 +36,14 @@ class CategoryOut(BaseModel):
 class ArticleOut(BaseModel):
     id: int
     title: str
+    source: str
     url: str
-    source_id: Optional[int] = None
-    source_name: Optional[str] = None
-    category_id: Optional[int] = None
+    date: Optional[datetime] = None
+    tags: str = ""
     summary: Optional[str] = None
-    tags: List[str] = []
     heat_score: float = 0.0
-    published_at: Optional[datetime] = None
-    fetched_at: Optional[datetime] = None
-    status: str = "new"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

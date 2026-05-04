@@ -17,11 +17,10 @@ export const api = {
   getArticles: (params = {}) => {
     const q = new URLSearchParams()
     if (params.page) q.set('page', params.page)
-    if (params.category_id) q.set('category_id', params.category_id)
+    if (params.source) q.set('source', params.source)
     return request(`/articles?${q}`)
   },
   getArticle: (id) => request(`/articles/${id}`),
-  getCategories: () => request('/categories'),
   getSources: () => request('/sources'),
   createSource: (data) => request('/sources', { method: 'POST', body: JSON.stringify(data) }),
   deleteSource: (id) => request(`/sources/${id}`, { method: 'DELETE' }),

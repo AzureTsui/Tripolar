@@ -29,9 +29,9 @@ export default function ArticleDetail() {
       </Link>
       <h1 className="text-2xl font-bold mb-3">{article.title}</h1>
       <div className="flex items-center gap-3 text-sm text-gray-500 mb-6">
-        {article.source_name && <span>{article.source_name}</span>}
-        {article.published_at && (
-          <span>{new Date(article.published_at).toLocaleDateString('zh-CN')}</span>
+        {article.source && <span>{article.source}</span>}
+        {article.date && (
+          <span>{new Date(article.date).toLocaleDateString('zh-CN')}</span>
         )}
         <a
           href={article.url}

@@ -1,50 +1,63 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api/client'
 import ArticleCard from '../components/ArticleCard'
-import CategoryFilter from '../components/CategoryFilter'
 import Pagination from '../components/Pagination'
 import Loading from '../components/Loading'
 
 export default function Feed() {
   const [articles, setArticles] = useState([])
-  const [categories, setCategories] = useState([])
   const [meta, setMeta] = useState({ page: 1, total: 0, per_page: 20 })
-  const [selectedCategory, setSelectedCategory] = useState(null)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [sources, setSources] = useState([])
+  const [selectedSource, setSelectedSource] = useState(null)
 
   useEffect(() => {
-    api.getCategories().then(setCategories).catch(() => {})
+    api.getSources().then(setSources).catch(() => {})
   }, [])
 
   useEffect(() => {
     setLoading(true)
     setError(null)
     api
-      .getArticles({ page, category_id: selectedCategory })
+      .getArticles({ page, source: selectedSource })
       .then((res) => {
         setArticles(res.data)
         setMeta(res.meta)
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [page, selectedCategory])
-
-  const handleCategoryChange = (id) => {
-    setSelectedCategory(id)
-    setPage(1)
-  }
+  }, [page, selectedSource])
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Feed</h1>
-      <CategoryFilter
-        categories={categories}
-        selected={selectedCategory}
-        onChange={handleCategoryChange}
-        loading={categories.length === 0}
-      />
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        <button
+          onClick={() => { setSelectedSource(null); setPage(1) }}
+          className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
+            selectedSource === null
+              ? 'bg-blue-600 text-white'
+              : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+          }`}
+        >
+          All
+        </button>
+        {sources.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => { setSelectedSource(s.name); setPage(1) }}
+            className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
+              selectedSource === s.name
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+            }`}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
       <div className="mt-4 space-y-3">
         {loading ? (
           <Loading />
