@@ -1,0 +1,22 @@
+queue:
+  name: article-content
+  retry_max: 3
+
+crawler:
+  provider: playwright_readability
+  timeout_ms: 30000
+  wait_until: domcontentloaded
+  user_agent: "TripolarBot/0.1"
+  min_content_chars: 500
+  max_content_chars: 200000
+  scroll_steps: 2
+
+fallback:
+  firecrawl_enabled: false
+  use_firecrawl_when_content_short: true
+
+domains:
+  arxiv.org:
+    min_content_chars: 300
+  news.ycombinator.com:
+    skip: true

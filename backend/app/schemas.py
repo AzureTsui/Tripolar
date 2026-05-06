@@ -51,6 +51,10 @@ class ArticleOut(BaseModel):
 
 class ArticleDetail(ArticleOut):
     content_text: Optional[str] = None
+    content_format: Optional[str] = "markdown"
+    content_status: Optional[str] = "pending"
+    content_fetched_at: Optional[datetime] = None
+    content_provider: Optional[str] = None
 
 
 class PaginationMeta(BaseModel):

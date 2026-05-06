@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, ARRAY
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -35,6 +35,13 @@ class Article(Base):
     date = Column(DateTime(timezone=True), nullable=True)
     tags = Column(String(500), default="")
     summary = Column(Text, nullable=True)
+    content_text = Column(Text, nullable=True)
+    content_format = Column(String(20), default="markdown")
+    content_status = Column(String(20), default="pending")
+    content_error = Column(Text, nullable=True)
+    content_fetched_at = Column(DateTime(timezone=True), nullable=True)
+    content_provider = Column(String(50), nullable=True)
+    content_hash = Column(String(64), nullable=True)
     heat_score = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

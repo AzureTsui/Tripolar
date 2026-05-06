@@ -26,12 +26,29 @@ CREATE TABLE IF NOT EXISTS articles (
     source      VARCHAR(200) NOT NULL,
     url         TEXT NOT NULL UNIQUE,
     date        TIMESTAMPTZ,
-    tags        VARCHAR(500) DEFAULT '',
-    summary     TEXT,
-    heat_score  FLOAT DEFAULT 0.0,
-    created_at  TIMESTAMPTZ DEFAULT now(),
-    updated_at  TIMESTAMPTZ DEFAULT now()
+    tags               VARCHAR(500) DEFAULT '',
+    summary            TEXT,
+    content_text       TEXT,
+    content_format     VARCHAR(20) DEFAULT 'markdown',
+    content_status     VARCHAR(20) DEFAULT 'pending',
+    content_error      TEXT,
+    content_fetched_at TIMESTAMPTZ,
+    content_provider   VARCHAR(50),
+    content_hash       VARCHAR(64),
+    heat_score         FLOAT DEFAULT 0.0,
+    created_at         TIMESTAMPTZ DEFAULT now(),
+    updated_at         TIMESTAMPTZ DEFAULT now()
 );
+
+-- 已有数据库升级正文抓取字段
+ALTER TABLE articles
+    ADD COLUMN IF NOT EXISTS content_text TEXT,
+    ADD COLUMN IF NOT EXISTS content_format VARCHAR(20) DEFAULT 'markdown',
+    ADD COLUMN IF NOT EXISTS content_status VARCHAR(20) DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS content_error TEXT,
+    ADD COLUMN IF NOT EXISTS content_fetched_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS content_provider VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64);
 
 -- 种子数据
 INSERT INTO categories (name, slug) VALUES
