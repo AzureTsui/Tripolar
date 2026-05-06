@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from app.config import CORS_ORIGINS
 from app.database import init_db
-from app.routers import articles, categories, sources
+from app.routers import articles, categories, sources, ai_tools
 
 app = FastAPI(title="Tripolar", description="AI Product Radar")
 
@@ -20,6 +20,7 @@ app.add_middleware(
 app.include_router(articles.router)
 app.include_router(categories.router)
 app.include_router(sources.router)
+app.include_router(ai_tools.router)
 
 # Serve built frontend in production
 frontend_dist = os.path.join(

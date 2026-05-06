@@ -72,14 +72,18 @@ tripolar/
 │   │   ├── routers/
 │   │   │   ├── articles.py      # /api/articles 端点（列表 + 详情）
 │   │   │   ├── categories.py    # /api/categories 端点
-│   │   │   └── sources.py       # /api/sources 端点（CRUD）
+│   │   │   ├── sources.py       # /api/sources 端点（CRUD）
+│   │   │   └── ai_tools.py       # /api/tools 端点（列表 + 详情 + 元数据）
 │   │   └── services/
 │   │       └── fetcher.py       # RSS 抓取核心逻辑（按 URL 去重）
 │   ├── scripts/
 │   │   └── fetch_articles.py    # 独立抓取脚本入口
 │   ├── seed.py                  # 种子数据初始化（分类 + RSS 源）
-│   ├── schema.sql               # 等价 DDL（参考用）
 │   └── requirements.txt         # Python 依赖
+├── sql/
+│   ├── 01_schema.sql             # 全量 DDL（RSS 核心 + AI 工具目录，6 张表）
+│   ├── 02_seed_core.sql          # RSS 核心种子数据
+│   └── 03_seed_ai_tools.sql      # AI 视频工具种子数据（100 条）
 ├── frontend/
 │   ├── src/
 │   │   ├── main.jsx             # React 入口，BrowserRouter 挂载
@@ -105,8 +109,10 @@ tripolar/
 ├── deploy/
 │   └── tripolar-web.service     # systemd 服务单元文件
 ├── docs/
-│   ├── SCHEMA.md                # 数据库表结构说明
-│   └── DATA_FLOW.md             # 数据流转与对象设计文档
+│   ├── DATABASE.md                           # 数据库总览文档（DDL + 设计 + 运维）
+│   └── AI视频工具全量清单 (100个).md           # AI 视频工具原始数据源
+├── scripts/
+│   └── migrate_to_new_schema.py               # 旧表 → 新三表迁移脚本（历史参考）
 └── README.md
 ```
 
@@ -151,6 +157,52 @@ erDiagram
 - **Source → Article**：通过 `articles.source` 字符串匹配 `sources.name`，松散耦合
 - **Category**：独立分类表，当前用于种子数据标签体系（观点洞察 / 产品发布 / 行业报告 / 模型发布 / 论文 / 工具测评）
 
+### AI 工具目录（三表设计）
+
+产品类型回答"它是什么"，使用场景回答"用户用它做什么"。
+
+```mermaid
+erDiagram
+    ai_product_types {
+        int id PK "自增主键"
+        string name "产品类型名（如 AI视频工具）"
+        string slug UK "唯一标识，用于 URL"
+        string description "类型说明"
+        int sort_order "排序权重"
+        boolean is_active "是否启用"
+    }
+
+    ai_use_cases {
+        int id PK "自增主键"
+        string name "使用场景名（如 视频生成）"
+        string slug UK "唯一标识，用于 URL"
+        string description "场景说明"
+        int sort_order "排序权重"
+        boolean is_active "是否启用"
+    }
+
+    ai_tools {
+        int id PK "自增主键"
+        string name "产品名称"
+        string slug UK "URL 友好标识"
+        string company "所属公司"
+        int product_type_id FK "→ ai_product_types.id"
+        int primary_use_case_id FK "→ ai_use_cases.id"
+        string short_description "一句话简介"
+        string overview "详细介绍"
+        string website_url "官网"
+        string logo_url "Logo"
+        string status "active / inactive"
+        timestamp created_at "创建时间"
+        timestamp updated_at "更新时间"
+    }
+
+    ai_product_types ||--o{ ai_tools : "1 个类型 → N 个产品"
+    ai_use_cases ||--o{ ai_tools : "1 个场景 → N 个产品"
+```
+
+当前数据规模：5 个产品类型 / 21 个使用场景 / 100 个 AI 视频工具。
+
 ### API 端点
 
 | 方法 | 路径 | 参数 | 响应 | 说明 |
@@ -162,6 +214,10 @@ erDiagram
 | GET | `/api/sources` | — | `SourceOut[]` | 全部 RSS 源 |
 | POST | `/api/sources` | `SourceCreate` body | `SourceOut` (201) | 新增 RSS 源 |
 | DELETE | `/api/sources/{id}` | — | 204 | 删除 RSS 源 |
+| GET | `/api/tools` | `page`, `per_page`, `product_type_id`, `use_case_id`, `search` | `PaginatedResponse[AIToolOut]` | AI 工具分页列表，支持类型/场景筛选和搜索 |
+| GET | `/api/tools/{id}` | — | `AIToolDetail` | AI 工具详情 |
+| GET | `/api/tools/meta/product-types` | — | `AIToolProductTypeOut[]` | 全部产品类型 |
+| GET | `/api/tools/meta/use-cases` | — | `AIToolUseCaseOut[]` | 全部使用场景 |
 
 分页响应结构：
 
@@ -235,8 +291,13 @@ pip install -r requirements.txt
 # 确保 PostgreSQL 运行中，创建数据库
 createdb tripolar
 
-# 初始化种子数据
+# 初始化数据库（Python 方式）
 python seed.py
+
+# 或使用 SQL 脚本（先建表再灌数据）
+psql -U tripolar -d tripolar -f sql/01_schema.sql
+psql -U tripolar -d tripolar -f sql/02_seed_core.sql
+psql -U tripolar -d tripolar -f sql/03_seed_ai_tools.sql
 
 # 启动服务
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

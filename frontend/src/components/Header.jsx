@@ -11,6 +11,9 @@ export default function Header() {
           <Link to="/" className="hover:text-gray-900 transition-colors">
             Feed
           </Link>
+          <Link to="/tools" className="hover:text-gray-900 transition-colors">
+            Tools
+          </Link>
           <Link to="/sources" className="hover:text-gray-900 transition-colors">
             Sources
           </Link>

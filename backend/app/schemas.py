@@ -1,7 +1,11 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Generic, TypeVar
 
+
+# ============================================================
+# RSS 资讯核心
+# ============================================================
 
 class SourceCreate(BaseModel):
     name: str
@@ -53,12 +57,63 @@ class ArticleDetail(ArticleOut):
     content_text: Optional[str] = None
 
 
+T = TypeVar("T")
+
+
 class PaginationMeta(BaseModel):
     page: int
     per_page: int
     total: int
 
 
-class PaginatedResponse(BaseModel):
-    data: List[ArticleOut]
+class PaginatedResponse(BaseModel, Generic[T]):
+    data: List[T]
     meta: PaginationMeta
+
+
+# ============================================================
+# AI 工具目录
+# ============================================================
+
+class AIToolProductTypeOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    sort_order: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class AIToolUseCaseOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    sort_order: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class AIToolOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    company: Optional[str] = None
+    product_type: Optional[AIToolProductTypeOut] = None
+    use_case: Optional[AIToolUseCaseOut] = None
+    short_description: Optional[str] = None
+    overview: Optional[str] = None
+    website_url: Optional[str] = None
+    logo_url: Optional[str] = None
+    status: str = "active"
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AIToolDetail(AIToolOut):
+    updated_at: Optional[datetime] = None

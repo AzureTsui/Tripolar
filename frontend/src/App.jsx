@@ -3,6 +3,8 @@ import Header from './components/Header'
 import Feed from './pages/Feed'
 import ArticleDetail from './pages/ArticleDetail'
 import Sources from './pages/Sources'
+import AITools from './pages/AITools'
+import AIToolDetail from './pages/AIToolDetail'
 
 export default function App() {
   return (
@@ -13,6 +15,8 @@ export default function App() {
           <Route path="/" element={<Feed />} />
           <Route path="/article/:id" element={<ArticleDetail />} />
           <Route path="/sources" element={<Sources />} />
+          <Route path="/tools" element={<AITools />} />
+          <Route path="/tools/:id" element={<AIToolDetail />} />
         </Routes>
       </main>
     </div>
