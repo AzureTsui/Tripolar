@@ -277,9 +277,23 @@ sequenceDiagram
 - **不覆盖更新**：已入库文章不会被后续抓取修改内容
 - **独立脚本**：`fetch_articles.py` 不依赖 Web 进程，可由 cron/systemd timer 调度
 
-## Quick Start
+## 项目启动
 
-### Backend
+本项目采用前后端分离架构，开发或部署时需要**同时运行后端和前端**两个服务：
+
+| 服务 | 技术栈 | 端口 | 说明 |
+|------|--------|------|------|
+| 后端 API | FastAPI + uvicorn | 8000 | 提供 REST API，前端通过代理转发请求 |
+| 前端页面 | React + Vite | 5173 | SPA 页面渲染，开发模式代理 `/api` → `:8000` |
+
+### 1. 环境准备
+
+```bash
+# 确保 PostgreSQL 16 运行中，创建数据库（首次）
+createdb tripolar
+```
+
+### 2. 后端启动
 
 ```bash
 cd backend
@@ -288,37 +302,83 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 确保 PostgreSQL 运行中，创建数据库
-createdb tripolar
+# 初始化数据库（二选一）
+python seed.py                                                  # Python 方式
+# psql -U tripolar -d tripolar -f sql/01_schema.sql             # SQL 方式（三脚本依次执行）
+# psql -U tripolar -d tripolar -f sql/02_seed_core.sql
+# psql -U tripolar -d tripolar -f sql/03_seed_ai_tools.sql
 
-# 初始化数据库（Python 方式）
-python seed.py
-
-# 或使用 SQL 脚本（先建表再灌数据）
-psql -U tripolar -d tripolar -f sql/01_schema.sql
-psql -U tripolar -d tripolar -f sql/02_seed_core.sql
-psql -U tripolar -d tripolar -f sql/03_seed_ai_tools.sql
-
-# 启动服务
+# 启动 API 服务
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend
+### 3. 前端启动
 
 ```bash
 cd frontend
 npm install
-npm run dev     # 开发模式（自动代理 /api 到后端）
-npm run build   # 生产构建
+npm run dev     # 开发模式，热更新 + API 代理（Vite proxy /api → localhost:8000）
 ```
 
-### RSS 抓取
+### 4. RSS 抓取（手动触发）
 
 ```bash
 cd backend
+source venv/bin/activate   # Windows: venv\Scripts\activate
 python scripts/fetch_articles.py
 ```
 
-## 部署
+## 生产部署
 
-见 `deploy/tripolar-web.service`。
+### Backend — systemd 服务
+
+```bash
+sudo cp deploy/tripolar-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tripolar-web
+```
+
+### Frontend — 静态文件
+
+前端构建为纯静态文件，由 Nginx 或 uvicorn 托管：
+
+```bash
+cd frontend
+npm run build       # 输出到 dist/
+```
+
+**方式一：Nginx 托管**
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    root /path/to/tripolar/frontend/dist;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    location / {
+        try_files $uri /index.html;   # SPA fallback
+    }
+}
+```
+
+**方式二：FastAPI 直接托管**
+
+```python
+# 在 app/main.py 中添加静态文件挂载
+from fastapi.staticfiles import StaticFiles
+app.mount("/", StaticFiles(directory="../frontend/dist", html=True), name="static")
+```
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DATABASE_URL` | `postgresql://tripolar:tripolar@localhost:5432/tripolar` | PostgreSQL 连接串 |
+| `CORS_ORIGINS` | `http://localhost:5173` | 允许的前端跨域来源 |
+| `DEEPSEEK_API_KEY` | — | DeepSeek API 密钥（可选） |
