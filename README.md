@@ -1,6 +1,6 @@
 # Tripolar - AI Product Radar
 
-全球 AI 信息聚合平台。自动抓取、清洗、聚类、分析 AI 领域动态。
+全球 AI 信息聚合平台。自动抓取 RSS/Atom 订阅源，去重写入 PostgreSQL，并异步抓取原文正文保存为 Markdown。
 
 ## 工程架构
 
@@ -10,8 +10,10 @@
 |------|------|------|
 | 前端 | React 18 + Vite + Tailwind CSS + React Router 6 | SPA 页面渲染、路由分发、API 数据消费 |
 | 后端 | FastAPI + SQLAlchemy 2.0 + Pydantic | REST API 服务、ORM 映射、请求校验 |
-| 数据库 | PostgreSQL 16 | 持久化存储、全文检索 |
-| 抓取 | feedparser | RSS/Atom 订阅源解析与去重入库 |
+| 数据库 | PostgreSQL 16 | RSS 元数据与文章正文持久化 |
+| RSS 抓取 | feedparser | RSS/Atom 订阅源解析与按 URL 去重入库 |
+| 正文抓取 | Redis + RQ + Playwright + Readability + Markdownify | 解耦正文爬取、动态渲染、正文提取、Markdown 存储 |
+| 可选降级 | Firecrawl | 本地抽取失败或内容过短时转换网页为 Markdown |
 | 部署 | systemd + uvicorn | 进程守护、ASGI 服务运行 |
 
 ### 系统架构图
@@ -19,43 +21,41 @@
 ```mermaid
 flowchart TB
     subgraph 展示层
-        direction LR
         A[Feed 文章流]
         B[ArticleDetail 详情]
         C[Sources 源管理]
-        D[React Router 6]
-        E[Tailwind CSS]
     end
 
-    subgraph API 层
-        direction LR
-        F["/api/articles"]
-        G["/api/categories"]
-        H["/api/sources"]
-        I[Pydantic Schemas]
+    subgraph API层
+        D[FastAPI Routers]
+        E[Pydantic Schemas]
     end
 
     subgraph 存储层
-        J[(PostgreSQL 16)]
-        K[SQLAlchemy ORM]
-        L[(sources / categories / articles)]
+        F[(PostgreSQL)]
+        G[(sources / categories / articles)]
     end
 
-    subgraph 抓取层
-        M[RSS/Atom 源]
-        N[feedparser]
-        O[fetcher.py]
-        P[scripts/fetch_articles.py]
+    subgraph RSS抓取层
+        H[RSS/Atom 源]
+        I[feedparser]
+        J[fetcher.py]
+        K[scripts/fetch_articles.py]
     end
 
-    M --> N --> O --> P
-    P --> J
-    J --> K --> L
-    L --> F & G & H
-    F & G & H --> I
-    I --> D
-    D --> A & B & C
-    E --- A & B & C
+    subgraph 正文抓取层
+        L[(Redis / RQ)]
+        M[scripts/content_worker.py]
+        N[Playwright]
+        O[Readability]
+        P[Markdownify]
+        Q[Firecrawl 可选降级]
+    end
+
+    H --> I --> J --> K --> F
+    J --> L --> M --> N --> O --> P --> F
+    O -.内容过短或失败.-> Q -.Markdown.-> F
+    F --> G --> D --> E --> A & B & C
 ```
 
 ### 目录结构
@@ -64,50 +64,37 @@ flowchart TB
 tripolar/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI 应用入口，中间件与路由注册
-│   │   ├── config.py            # 环境变量配置（DB/CORS/API Key）
-│   │   ├── database.py          # SQLAlchemy 引擎、Session、Base 声明
-│   │   ├── models.py            # ORM 模型：Source、Category、Article
-│   │   ├── schemas.py           # Pydantic 请求/响应模型
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   ├── schemas.py
 │   │   ├── routers/
 │   │   │   ├── articles.py      # /api/articles 端点（列表 + 详情）
 │   │   │   ├── categories.py    # /api/categories 端点
 │   │   │   ├── sources.py       # /api/sources 端点（CRUD）
-│   │   │   └── ai_tools.py       # /api/tools 端点（列表 + 详情 + 元数据）
+│   │   │   └── ai_tools.py      # /api/tools 端点（列表 + 详情 + 元数据）
 │   │   └── services/
-│   │       └── fetcher.py       # RSS 抓取核心逻辑（按 URL 去重）
+│   │       ├── fetcher.py
+│   │       ├── crawler_config.py
+│   │       ├── content_queue.py
+│   │       ├── content_extractor.py
+│   │       └── content_fetcher.py
 │   ├── scripts/
-│   │   └── fetch_articles.py    # 独立抓取脚本入口
-│   ├── seed.py                  # 种子数据初始化（分类 + RSS 源）
+│   │   ├── fetch_articles.py
+│   │   ├── content_worker.py
+│   │   └── enqueue_pending_content.py
+│   ├── seed.py                  # 种子数据初始化（分类 + RSS 源 + AI 工具元数据）
 │   └── requirements.txt         # Python 依赖
 ├── sql/
 │   ├── 01_schema.sql             # 全量 DDL（RSS 核心 + AI 工具目录，6 张表）
 │   ├── 02_seed_core.sql          # RSS 核心种子数据
 │   └── 03_seed_ai_tools.sql      # AI 视频工具种子数据（100 条）
 ├── frontend/
-│   ├── src/
-│   │   ├── main.jsx             # React 入口，BrowserRouter 挂载
-│   │   ├── App.jsx              # 路由定义（/ /article/:id /sources）
-│   │   ├── api/
-│   │   │   └── client.js        # fetch 封装，对 /api/* 的统一请求层
-│   │   ├── pages/
-│   │   │   ├── Feed.jsx         # 文章流主页（分页 + 来源筛选）
-│   │   │   ├── ArticleDetail.jsx # 文章详情页
-│   │   │   └── Sources.jsx      # RSS 源管理页
-│   │   └── components/
-│   │       ├── Header.jsx       # 顶部导航栏
-│   │       ├── ArticleCard.jsx  # 文章卡片
-│   │       ├── CategoryFilter.jsx # 分类筛选按钮组
-│   │       ├── Pagination.jsx   # 分页控件
-│   │       └── Loading.jsx      # 加载动画
-│   ├── index.html               # HTML 入口
-│   ├── vite.config.js           # Vite 配置（React 插件 + API 代理）
-│   ├── tailwind.config.js       # Tailwind 配置
-│   └── package.json             # Node 依赖
 ├── config/
-│   └── urls.txt                 # RSS 源 URL 清单（备选源参考）
+│   ├── urls.txt
+│   └── crawler.yaml
 ├── deploy/
-│   └── tripolar-web.service     # systemd 服务单元文件
 ├── docs/
 │   ├── DATABASE.md                           # 数据库总览文档（DDL + 设计 + 运维）
 │   └── AI视频工具全量清单 (100个).md           # AI 视频工具原始数据源
@@ -116,46 +103,60 @@ tripolar/
 └── README.md
 ```
 
-### 数据模型
+## 数据模型
 
-三张核心表，`articles.source` 为简单字符串，不与 `sources` 建立外键关联——源可删除而文章不丢失。
+三张核心表，`articles.source` 为来源名称字符串，不与 `sources` 建立外键关联。
 
 ```mermaid
 erDiagram
     sources {
-        int id PK "自增主键"
-        string name "来源名称"
-        string url UK "RSS 地址，唯一"
-        string type "源类型，默认 rss"
-        float trust_score "信任度 0~1"
-        string status "active / inactive"
-        timestamp last_fetched_at "最后抓取时间"
-        timestamp created_at "创建时间"
+        int id PK
+        string name
+        string url UK
+        string type
+        float trust_score
+        string status
+        timestamp last_fetched_at
+        timestamp created_at
     }
 
     categories {
-        int id PK "自增主键"
-        string name "分类名（中文）"
-        string slug UK "英文标识，唯一"
-        int sort_order "排序权重"
+        int id PK
+        string name
+        string slug UK
+        int sort_order
     }
 
     articles {
-        int id PK "自增主键"
-        string title "文章标题"
-        string source "来源名称（非外键）"
-        string url UK "原文链接，唯一"
-        timestamp date "发布时间"
-        string tags "标签，逗号分隔"
-        string summary "内容摘要"
-        float heat_score "热度评分"
-        timestamp created_at "入库时间"
-        timestamp updated_at "更新时间"
+        int id PK
+        string title
+        string source
+        string url UK
+        timestamp date
+        string tags
+        string summary
+        string content_format
+        string content_status
+        string content_provider
+        string content_hash
+        text content_text
+        text content_error
+        timestamp content_fetched_at
+        float heat_score
+        timestamp created_at
+        timestamp updated_at
     }
 ```
 
-- **Source → Article**：通过 `articles.source` 字符串匹配 `sources.name`，松散耦合
-- **Category**：独立分类表，当前用于种子数据标签体系（观点洞察 / 产品发布 / 行业报告 / 模型发布 / 论文 / 工具测评）
+正文抓取状态：
+
+| 状态 | 说明 |
+|------|------|
+| pending | 已入库但尚未成功入队或等待补投 |
+| queued | 已投递到 Redis/RQ 队列 |
+| fetching | worker 正在抓取正文 |
+| success | 正文抓取成功并写入 `content_text` |
+| failed | 正文抓取失败，错误写入 `content_error` |
 
 ### AI 工具目录（三表设计）
 
@@ -203,32 +204,66 @@ erDiagram
 
 当前数据规模：5 个产品类型 / 21 个使用场景 / 100 个 AI 视频工具。
 
-### API 端点
+## API 端点
 
 | 方法 | 路径 | 参数 | 响应 | 说明 |
 |------|------|------|------|------|
 | GET | `/api/health` | — | `{status: "ok"}` | 健康检查 |
 | GET | `/api/articles` | `page`, `per_page`, `source` | `PaginatedResponse[ArticleOut]` | 文章分页列表，支持来源筛选 |
-| GET | `/api/articles/{id}` | — | `ArticleDetail` | 文章详情（含摘要） |
+| GET | `/api/articles/{id}` | — | `ArticleDetail` | 文章详情，包含正文抓取字段 |
 | GET | `/api/categories` | — | `CategoryOut[]` | 全部分类 |
 | GET | `/api/sources` | — | `SourceOut[]` | 全部 RSS 源 |
-| POST | `/api/sources` | `SourceCreate` body | `SourceOut` (201) | 新增 RSS 源 |
+| POST | `/api/sources` | `SourceCreate` body | `SourceOut` | 新增 RSS 源 |
 | DELETE | `/api/sources/{id}` | — | 204 | 删除 RSS 源 |
 | GET | `/api/tools` | `page`, `per_page`, `product_type_id`, `use_case_id`, `search` | `PaginatedResponse[AIToolOut]` | AI 工具分页列表，支持类型/场景筛选和搜索 |
 | GET | `/api/tools/{id}` | — | `AIToolDetail` | AI 工具详情 |
 | GET | `/api/tools/meta/product-types` | — | `AIToolProductTypeOut[]` | 全部产品类型 |
 | GET | `/api/tools/meta/use-cases` | — | `AIToolUseCaseOut[]` | 全部使用场景 |
 
-分页响应结构：
+## 配置
 
-```json
-{
-  "data": [{ "id": 1, "title": "...", "source": "36氪 AI", ... }],
-  "meta": { "page": 1, "per_page": 20, "total": 150 }
-}
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| DATABASE_URL | `postgresql://tripolar:tripolar@localhost:5432/tripolar` | PostgreSQL 连接串 |
+| CORS_ORIGINS | `http://localhost:5173` | 前端跨域来源 |
+| REDIS_URL | `redis://localhost:6379/0` | Redis/RQ 连接串 |
+| CONTENT_QUEUE_NAME | `article-content` | 正文抓取队列名称 |
+| CRAWLER_CONFIG_PATH | `config/crawler.yaml` | 爬虫配置文件路径 |
+| FIRECRAWL_API_KEY | 空 | Firecrawl API Key |
+| FIRECRAWL_ENABLED | `false` | 是否启用 Firecrawl 降级 |
+
+### `config/crawler.yaml`
+
+该文件统一配置正文抓取、队列和域名策略。配置缺失或填写错误时，后端会使用默认值兜底。
+
+```yaml
+queue:
+  name: article-content
+  retry_max: 3
+
+crawler:
+  provider: playwright_readability
+  timeout_ms: 30000
+  wait_until: domcontentloaded
+  user_agent: "TripolarBot/0.1"
+  min_content_chars: 500
+  max_content_chars: 200000
+  scroll_steps: 2
+
+fallback:
+  firecrawl_enabled: false
+  use_firecrawl_when_content_short: true
+
+domains:
+  arxiv.org:
+    min_content_chars: 300
+  news.ycombinator.com:
+    skip: true
 ```
 
-### 数据流
+## 数据流
 
 端到端流程，从 RSS 抓取到前端展示：
 
@@ -301,6 +336,7 @@ python -m venv venv
 # Windows: venv\Scripts\activate
 source venv/bin/activate
 pip install -r requirements.txt
+playwright install chromium
 
 # 初始化数据库（二选一）
 python seed.py                                                  # Python 方式
@@ -337,6 +373,8 @@ sudo cp deploy/tripolar-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tripolar-web
 ```
+
+正文 worker 建议作为独立进程部署，与 Web 服务分别守护。
 
 ### Frontend — 静态文件
 
@@ -375,10 +413,57 @@ from fastapi.staticfiles import StaticFiles
 app.mount("/", StaticFiles(directory="../frontend/dist", html=True), name="static")
 ```
 
-### 环境变量
+### 正文抓取 Worker
+
+新文章会先写入 `articles`，随后投递 `article_id` 到 Redis/RQ 正文抓取队列。Redis 不可用时入库不会失败，文章保持 `content_status = 'pending'`。
+
+```bash
+# 确保 Redis 运行中
+cd backend
+python scripts/content_worker.py     # 消费 article-content 队列
+```
+
+worker 使用 Playwright 动态渲染页面 → Readability 提取正文 → Markdownify 转 Markdown → 写回 `articles.content_text`。
+
+### 历史文章补抓
+
+```bash
+cd backend
+python scripts/enqueue_pending_content.py --limit 10
+python scripts/enqueue_pending_content.py --status failed --limit 20
+```
+
+## 已有数据库升级
+
+如果数据库已存在但缺少正文抓取相关列，手动执行：
+
+```sql
+ALTER TABLE articles
+    ADD COLUMN IF NOT EXISTS content_text TEXT,
+    ADD COLUMN IF NOT EXISTS content_format VARCHAR(20) DEFAULT 'markdown',
+    ADD COLUMN IF NOT EXISTS content_status VARCHAR(20) DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS content_error TEXT,
+    ADD COLUMN IF NOT EXISTS content_fetched_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS content_provider VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64);
+```
+
+## 正文抓取策略
+
+1. Playwright 打开原文链接，模拟真实浏览器环境
+2. Readability 提取正文 HTML，过滤导航、广告、侧边栏
+3. Markdownify 转 Markdown，保留表格、代码块和公式
+4. 本地抽取失败或内容过短时，启用 Firecrawl 降级（需配置 `FIRECRAWL_ENABLED=true`）
+5. Cloudflare / 验证码页面记录 `failed`，不阻塞 RSS 抓取
+
+## 环境变量
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DATABASE_URL` | `postgresql://tripolar:tripolar@localhost:5432/tripolar` | PostgreSQL 连接串 |
-| `CORS_ORIGINS` | `http://localhost:5173` | 允许的前端跨域来源 |
+| `CORS_ORIGINS` | `http://localhost:5173` | 前端跨域来源 |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis/RQ 连接串 |
+| `CONTENT_QUEUE_NAME` | `article-content` | 正文抓取队列名称 |
+| `FIRECRAWL_API_KEY` | — | Firecrawl API Key（可选） |
+| `FIRECRAWL_ENABLED` | `false` | 是否启用 Firecrawl 降级 |
 | `DEEPSEEK_API_KEY` | — | DeepSeek API 密钥（可选） |

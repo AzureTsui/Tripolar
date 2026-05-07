@@ -1,9 +1,10 @@
 import feedparser
 from datetime import datetime
 from app.models import Source, Article
+from app.services.content_queue import enqueue_article_content
 
 
-def fetch_source(source: Source, db) -> int:
+def fetch_source(source: Source, db, enqueue_content: bool = True) -> int:
     """Fetch a single RSS source, return number of new articles."""
     feed = feedparser.parse(source.url)
     new_count = 0
@@ -30,6 +31,14 @@ def fetch_source(source: Source, db) -> int:
             summary=entry.get("summary", "") or entry.get("description", ""),
         )
         db.add(article)
+        db.flush()
+
+        if enqueue_content:
+            try:
+                enqueue_article_content(article.id, db)
+            except Exception:
+                article.content_status = "pending"
+
         new_count += 1
 
     source.last_fetched_at = datetime.utcnow()
@@ -37,13 +46,13 @@ def fetch_source(source: Source, db) -> int:
     return new_count
 
 
-def fetch_all_sources(db) -> dict:
+def fetch_all_sources(db, enqueue_content: bool = True) -> dict:
     """Fetch all active sources, return summary dict."""
     sources = db.query(Source).filter(Source.status == "active").all()
     results = {}
     for source in sources:
         try:
-            count = fetch_source(source, db)
+            count = fetch_source(source, db, enqueue_content=enqueue_content)
             results[source.name] = count
         except Exception as e:
             db.rollback()
